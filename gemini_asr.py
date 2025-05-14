@@ -54,7 +54,7 @@ def setup_logging(level=logging.INFO):
         def emit(self, record):
             with log_lock:
                 super().emit(record)
-    
+
     # 顏色定義
     COLORS = {
         'DEBUG': '\033[36m',      # 青色
@@ -64,7 +64,7 @@ def setup_logging(level=logging.INFO):
         'CRITICAL': '\033[41m',   # 紅色背景
         'RESET': '\033[0m'        # 重置顏色
     }
-    
+
     # 自定義格式化器，根據日誌級別設定顏色
     class ColoredFormatter(logging.Formatter):
         def format(self, record):
@@ -73,21 +73,21 @@ def setup_logging(level=logging.INFO):
                 record.levelname = f"{COLORS[levelname]}{levelname}{COLORS['RESET']}"
                 record.msg = f"{COLORS[levelname]}{record.msg}{COLORS['RESET']}"
             return super().format(record)
-    
+
     # 移除現有的處理器
     for handler in logging.root.handlers[:]:
         logging.root.removeHandler(handler)
-    
+
     # 建立新的執行緒安全處理器
     handler = ThreadSafeHandler()
     formatter = ColoredFormatter('%(asctime)s - %(levelname)s - %(threadName)s - %(message)s',
                                 datefmt='%Y-%m-%d %H:%M:%S')
     handler.setFormatter(formatter)
-    
+
     # 設定日誌根處理器
     logging.root.setLevel(level)
     logging.root.addHandler(handler)
-    
+
     logging.debug(f"日誌系統已初始化，級別: {logging.getLevelName(level)}")
 
 def split_media(media_path, temp_dir, duration=300):
@@ -95,35 +95,35 @@ def split_media(media_path, temp_dir, duration=300):
     is_video = True if media_path.lower().endswith(('.mp4', '.avi', '.mov', '.mkv')) else False
     file_type = "影片" if is_video else "音訊"
     logging.debug(f"開始分割{file_type} {media_path}，分段時長: {duration} 秒")
-    
+
     # 根據文件類型載入媒體
     if is_video:
         media = mp.VideoFileClip(media_path)
     else:
         media = mp.AudioFileClip(media_path)
-    
+
     total_duration = int(media.duration)
     parts = total_duration // duration if total_duration % duration == 0 else total_duration // duration + 1
     logging.debug(f"{file_type}總時長: {total_duration} 秒，將分為 {parts} 個部分")
-    
+
     for idx in range(1, parts + 1):
         chunk_filename = os.path.join(temp_dir, f"chunk_{idx:02d}.mp3")
         logging.debug(f"處理第 {idx}/{parts} 部分 → {chunk_filename}")
         clip = media.subclip((idx - 1) * duration, min(idx * duration, total_duration))
-        
+
         # 根據媒體類型選擇適當的保存方法
         if is_video:
             clip.audio.write_audiofile(chunk_filename, verbose=False, logger=None)
         else:
             clip.write_audiofile(chunk_filename, verbose=False, logger=None)
-    
+
     logging.info(f"已將{file_type}分割成 {parts} 個部分")
     media.close()
 
 def save_raw_transcript(transcript_text, output_path, chunk_name):
     """
     保存 LLM 生成的原始轉錄結果
-    
+
     Args:
         transcript_text (str): 原始轉錄文字
         output_path (str): 目標資料夾路徑
@@ -131,21 +131,21 @@ def save_raw_transcript(transcript_text, output_path, chunk_name):
     """
     # 確保輸出目錄存在
     os.makedirs(output_path, exist_ok=True)
-    
+
     # 生成輸出檔案名稱
     output_file = os.path.join(output_path, f"{os.path.splitext(chunk_name)[0]}_raw.txt")
-    
+
     # 寫入檔案
     with open(output_file, "w", encoding="utf-8") as f:
         f.write(transcript_text)
-    
+
     logging.debug(f"已保存原始轉錄結果到: {output_file}")
     return output_file
 
 def get_transcription_prompt(extra_prompt=None):
     """
     建立轉錄提示詞模板，支援額外的提示詞
-    
+
     Args:
         extra_prompt (str, optional): 額外的提示詞內容
     """
@@ -166,17 +166,17 @@ def get_transcription_prompt(extra_prompt=None):
 [01:02.35] [音樂] 或 [01:02.35] [音效]
 
 請使用以下語言進行轉錄：{language}"""
-    
+
     # 如果有額外提示詞，則加入
     if extra_prompt:
         template += f"\n\n此外，以下是一些額外的提示詞，請參考：\n{extra_prompt}"
-    
+
     return PromptTemplate.from_template(template)
 
 def process_single_file(file, idx, duration, lang, model_name, save_raw, raw_dir, extra_prompt=None, time_offset=0, preview=False, max_retries=3):
     """
     處理單個音訊檔案的轉錄工作，設計為可在多執行緒環境中運行
-    
+
     Args:
         file (str): 音訊檔案路徑
         idx (int): 檔案索引
@@ -189,7 +189,7 @@ def process_single_file(file, idx, duration, lang, model_name, save_raw, raw_dir
         time_offset (int, optional): 時間偏移量（秒）
         preview (bool, optional): 是否顯示原始轉錄結果預覽
         max_retries (int, optional): 最大重試次數，預設為3
-        
+
     Returns:
         tuple: (SRT 格式的字幕內容, 原始轉錄檔案路徑)
     """
@@ -197,14 +197,14 @@ def process_single_file(file, idx, duration, lang, model_name, save_raw, raw_dir
     logging.info(f"正在轉錄 {basename} (索引 {idx})...")
     logging.debug(f"應用時間偏移量: {time_offset} 秒")
     time1 = time.time()
-    
+
     # 設定提示詞模板
     prompt_template = get_transcription_prompt(extra_prompt)
-    
+
     # 準備提示詞
     prompt = prompt_template.format(language=lang)
     logging.debug(f"已生成提示詞模板，語言設定: {lang}")
-    
+
     # 設定 Gemini 模型配置
     generation_config = types.GenerateContentConfig(
         temperature=0,
@@ -212,11 +212,11 @@ def process_single_file(file, idx, duration, lang, model_name, save_raw, raw_dir
         top_k=32,
         max_output_tokens=None
     )
-    
+
     # 實作重試邏輯
     retries = 0
     last_error = None
-    
+
     while retries <= max_retries:
         current_key = None
         try:
@@ -229,7 +229,7 @@ def process_single_file(file, idx, duration, lang, model_name, save_raw, raw_dir
                 # 已經沒有可用的 API KEY
                 logging.error(f"無法獲取可用的 API KEY: {e}")
                 return None, None
-            
+
             # 先上傳音訊檔案
             try:
                 logging.debug(f"正在上傳音訊檔案 {file}")
@@ -238,72 +238,72 @@ def process_single_file(file, idx, duration, lang, model_name, save_raw, raw_dir
             except Exception as e:
                 logging.error(f"上傳音訊檔案失敗: {e}")
                 return None, None
-                
+
             # 創建模型並送出請求 - 修改為使用上傳的檔案
             response = client.models.generate_content(
                 model=model_name,
                 contents=[prompt, uploaded_file],
                 config=generation_config
             )
-            
+
             # 獲取原始轉錄文字
             raw_transcript = response.text
             logging.debug(f"已收到 Gemini API 回應，回應長度: {len(raw_transcript)} 字元")
-            
+
             # 印出原始轉錄結果 (可能較長，只顯示前200個字符和後200個字符)
             if preview:
                 if len(raw_transcript) > 400:
                     preview_text = f"{raw_transcript[:200]}...\n...\n{raw_transcript[-200:]}"
                 else:
                     preview_text = raw_transcript
-                
+
                 logging.info(f"原始轉錄結果預覽:\n{preview_text}")
-            
+
             # 保存原始轉錄結果
             raw_file = None
             if save_raw:
                 raw_file = save_raw_transcript(raw_transcript, raw_dir, basename)
                 logging.info(f"原始轉錄結果已保存至: {raw_file}")
-            
+
             # 直接將 Gemini 的回應轉換為 SRT 格式
             logging.debug(f"處理轉錄結果，時間偏移: {time_offset} 秒")
             srt_content = direct_to_srt(raw_transcript, time_offset)
-            
+
             if not srt_content:
                 logging.error(f"轉錄 {file} 失敗")
                 return None, raw_file
-                
+
             # 使用字幕編號計數而不是換行符
             subtitle_count = srt_content.count("\n\n") if srt_content else 0
-            logging.debug(f"已將轉錄結果轉換為 SRT 格式，估計字幕數量: {subtitle_count}") 
-            
+            logging.debug(f"已將轉錄結果轉換為 SRT 格式，估計字幕數量: {subtitle_count}")
+
             time2 = time.time()
             processing_time = time2 - time1
             logging.info(f"已完成 {basename} 的轉錄，耗時 {processing_time:.2f} 秒")
-            
+
             return srt_content, raw_file
-            
+
         except Exception as e:
             logging.error(f"處理 {file} 時發生錯誤: {e}")
             last_error = e
             error_message = str(e)
-            
+
             # 檢查是否為配額限制錯誤 (429)
             if "429" in error_message and current_key:
                 logging.warning(f"API KEY 限流錯誤: {error_message}")
                 # 標記當前 KEY 為已用盡
                 if remove_exhausted_key(current_key):
                     retries -= 1  # 如果成功移除限流金鑰，不計入重試次數
-                
+
             retries += 1
-            
+
             if retries <= max_retries:
                 backoff_time = 2 ** retries  # 指數退避策略
                 logging.warning(f"第 {retries} 次重試，等待 {backoff_time} 秒...")
                 time.sleep(backoff_time)
             else:
                 logging.error(f"處理 {file} 時發生錯誤，已重試 {max_retries} 次: {last_error}")
-                
+
     # 所有重試都失敗
     logging.error(f"處理 {file} 時發生錯誤: {last_error}", exc_info=True)
     return None, None
@@ -364,14 +364,14 @@ def transcribe_with_gemini(temp_dir, duration=300, max_segment_retries=3, **kwar
     # 創建結果儲存容器
     transcripts_results = [None] * len(all_files)
     raw_transcripts_paths = []
-    
+
     # 確保輸出目錄存在
     if save_raw:
         os.makedirs(raw_dir, exist_ok=True)
 
     # 任務定義: (file_path, original_index, current_retry_count, segment_time_offset)
     Task = collections.namedtuple('Task', ['file_path', 'original_index', 'current_retry_count', 'segment_time_offset'])
-    
+
     tasks_to_process = collections.deque()
     for idx, file_path in enumerate(all_files):
         segment_time_offset = time_offset + (idx * duration)
@@ -392,7 +392,7 @@ def transcribe_with_gemini(temp_dir, duration=300, max_segment_retries=3, **kwar
                     save_raw, raw_dir, extra_prompt, task.segment_time_offset, preview
                 )
                 active_futures[future] = task
-            
+
             if not active_futures: # 如果沒有活動任務，則跳出循環 (所有任務已處理完畢)
                 break
 
@@ -435,7 +435,7 @@ def transcribe_with_gemini(temp_dir, duration=300, max_segment_retries=3, **kwar
                         overall_transcription_failed = True
                         # 觸發中止
                         break
-            
+
             if overall_transcription_failed:
                 break # 跳出主 while 循環
 
@@ -489,11 +489,11 @@ def transcribe_with_gemini(temp_dir, duration=300, max_segment_retries=3, **kwar
 def direct_to_srt(transcript_text, time_offset=0):
     """
     直接將 Gemini 轉錄結果轉換為 SRT 格式。
-    
+
     Args:
         transcript_text (str): Gemini 轉錄的文字
         time_offset (int): 時間偏移量（秒）
-        
+
     Returns:
         str: SRT 格式的字幕內容
     """
@@ -501,49 +501,49 @@ def direct_to_srt(transcript_text, time_offset=0):
         logging.debug(f"開始將轉錄文字轉換為 SRT 格式，時間偏移: {time_offset} 秒")
         lines = transcript_text.strip().splitlines()
         logging.debug(f"轉錄文字包含 {len(lines)} 行")
-        
+
         srt_lines = []
         srt_index = 1
-        
+
         # 匹配時間戳和文字內容 - 支援精確時間戳（含毫秒）
         # 匹配格式: [HH:MM:SS.ss] 或 [MM:SS.ss]
         line_regex = re.compile(r'^\[((?:\d{2}:)?\d{2}:\d{2}(?:\.\d+)?)\]\s*(.+)$')
-        
+
         matched_count = 0
         skipped_count = 0
-        
+
         # 存儲前一個時間戳，用於計算持續時間
         prev_timestamp_seconds = None
-        
+
         for i, line in enumerate(lines):
             line = line.strip()
             if not line:
                 skipped_count += 1
                 continue
-                
+
             match = line_regex.match(line)
             if not match:
                 logging.debug(f"第 {i+1} 行不符合時間戳格式: {line[:50] + ('...' if len(line) > 50 else '')}")
                 skipped_count += 1
                 continue
-                
+
             timestamp, content = match.groups()
             seconds = timestamp_to_seconds(timestamp)
-            
+
             if seconds is None:
                 logging.warning(f"第 {i+1} 行時間戳解析失敗: {timestamp}")
                 skipped_count += 1
                 continue
-                
+
             # 應用時間偏移
             seconds += time_offset
-            
+
             # 計算結束時間
             # 1. 檢查下一行是否存在，如果存在並有有效時間戳，則使用下一行時間戳作為結束時間
             # 2. 否則使用預設持續時間 (通常為 3-5 秒)
             next_timestamp_seconds = None
             default_duration = 3.0  # 預設持續時間（秒）
-            
+
             # 尋找下一個有效時間戳
             for next_line in lines[i+1:]:
                 next_match = line_regex.match(next_line.strip())
@@ -553,7 +553,7 @@ def direct_to_srt(transcript_text, time_offset=0):
                     if next_timestamp_seconds is not None:
                         next_timestamp_seconds += time_offset
                         break
-            
+
             # 決定結束時間
             if next_timestamp_seconds is not None:
                 end_time = next_timestamp_seconds
@@ -563,22 +563,22 @@ def direct_to_srt(transcript_text, time_offset=0):
             else:
                 # 如果沒有下一個時間戳，使用預設持續時間
                 end_time = seconds + default_duration
-            
+
             # 確保時間戳包含小數部分，以保持毫秒精度
             start_formatted = format_time_srt(seconds)
             end_formatted = format_time_srt(end_time)
-            
+
             srt_lines.append(f"{srt_index}")
             srt_lines.append(f"{start_formatted} --> {end_formatted}")
             srt_lines.append(f"{content}")
             srt_lines.append("")  # 空行分隔
-            
+
             srt_index += 1
             matched_count += 1
-            
+
             # 更新前一個時間戳
             prev_timestamp_seconds = seconds
-            
+
         logging.debug(f"SRT 轉換完成: 總行數={len(lines)}, 成功匹配={matched_count}, 已跳過={skipped_count}")
         return "\n".join(srt_lines)
     except Exception as e:
@@ -589,10 +589,10 @@ def timestamp_to_seconds(ts_str):
     """
     將 HH:MM:SS.ss 或 MM:SS.ss 格式的時間戳字串轉換為總秒數。
     支援毫秒精度。
-    
+
     Args:
         ts_str (str): HH:MM:SS.ss 或 MM:SS.ss 格式的時間戳字串
-        
+
     Returns:
         float or None: 總秒數（包含小數部分），如果解析失敗則返回 None
     """
@@ -604,10 +604,10 @@ def timestamp_to_seconds(ts_str):
             ms_part = float('0.' + ms_part_str)
         else:
             main_part = ts_str
-            
+
         # 將時間戳分割為各部分
         parts = list(map(int, main_part.split(':')))
-        
+
         if len(parts) == 3:  # HH:MM:SS 格式
             h, m, s = parts
             return h * 3600 + m * 60 + s + ms_part
@@ -624,21 +624,21 @@ def timestamp_to_seconds(ts_str):
 def format_time_srt(seconds):
     """
     將秒數格式化為 SRT 格式的時間戳（HH:MM:SS,mmm）。
-    
+
     Args:
         seconds (float): 秒數
-        
+
     Returns:
         str: SRT 格式的時間戳
     """
     if seconds is None or seconds < 0:
         seconds = 0.0  # 如果輸入無效或為負，預設為 0
-        
+
     # 計算小時、分鐘和秒
     hours = int(seconds // 3600)
     minutes = int((seconds % 3600) // 60)
     secs = int(seconds % 60)
-    
+
     # 取得毫秒部分（保留 3 位精度）
     milliseconds = int((seconds % 1) * 1000)
     return f"{hours:02}:{minutes:02}:{secs:02},{milliseconds:03}"
@@ -646,10 +646,10 @@ def format_time_srt(seconds):
 def combine_subtitles(subtitles):
     """
     簡單合併多個字幕檔案，保持正確的索引編號。
-    
+
     Args:
         subtitles (list): 字幕內容的列表
-        
+
     Returns:
         str: 合併後的字幕內容
     """
@@ -657,18 +657,18 @@ def combine_subtitles(subtitles):
     result = []
     current_idx = 1
     total_entries = 0
-    
+
     for subtitle_idx, subtitle in enumerate(subtitles):
         logging.debug(f"處理第 {subtitle_idx+1} 個字幕檔案，長度: {len(subtitle)} 字元")
         lines = subtitle.splitlines()
         i = 0
         subtitle_entries = 0
-        
+
         while i < len(lines):
             if not lines[i].strip():
                 i += 1
                 continue
-                
+
             # 檢查是否為索引行（純數字）
             if lines[i].strip().isdigit() and i + 2 < len(lines):
                 # 替換索引為當前正確的索引
@@ -681,10 +681,10 @@ def combine_subtitles(subtitles):
                 i += 3
             else:
                 i += 1
-        
+
         total_entries += subtitle_entries
         logging.debug(f"第 {subtitle_idx+1} 個字幕檔案處理完成，包含 {subtitle_entries} 個字幕條目")
-    
+
     logging.info(f"字幕合併完成，總計 {total_entries} 個字幕條目")
     return "\n".join(result)
 
@@ -743,21 +743,21 @@ def main(video_path, skip_existing=False, **kwargs):
 def clip(filepath, st=None, ed=None):
     """
     剪輯影片的指定部分並提取音訊。
-    
+
     Args:
         filepath (str): 影片檔案路徑
         st (int, optional): 開始時間（秒）
         ed (int, optional): 結束時間（秒）
-        
+
     Returns:
         str: 輸出的音訊檔案路徑
     """
     logging.info(f"準備剪輯影片: {filepath}")
     logging.debug(f"剪輯範圍: 開始={st if st is not None else '開頭'}, 結束={ed if ed is not None else '結尾'}")
-    
+
     clip = mp.VideoFileClip(filepath)
     logging.debug(f"原始影片時長: {clip.duration:.2f} 秒")
-    
+
     if st is not None or ed is not None:
         if st is None:
             st = 0
@@ -769,7 +769,7 @@ def clip(filepath, st=None, ed=None):
     else:
         logging.info("提取完整影片的音訊")
         newpath = filepath.replace(".mp4", ".mp3")
-        
+
     logging.debug(f"開始提取音訊到: {newpath}")
     clip.audio.write_audiofile(newpath, verbose=False, logger=None)
     logging.info(f"音訊提取完成: {newpath}")
@@ -799,11 +799,11 @@ def clip_and_transcribe(filepath, st=None, ed=None, skip_existing=False, **kwarg
         st = 0
     newpath = clip(filepath, st, ed)
     logging.debug(f"開始轉錄剪輯後的音訊: {newpath}")
-    
+
     # 將原始開始時間作為參數傳遞，用於時間戳校正
     kwargs['time_offset'] = st
     logging.debug(f"設定時間偏移量: {st} 秒，用於校正字幕時間戳")
-    
+
     # Pass skip_existing=False here, as the check was already done based on the *original* filename
     # Or pass skip_existing=skip_existing if main should re-check based on the newpath (less likely desired)
     main(newpath, **kwargs) # Pass kwargs explicitly
